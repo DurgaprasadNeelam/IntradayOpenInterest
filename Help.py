@@ -4,6 +4,7 @@ import time as t
 
 url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
 urlMarketStatus = "https://www.nseindia.com/api/marketStatus"
+urlActiveContracts = "https://www.nseindia.com/api/snapshot-derivatives-equity?index=contracts&limit=10"
 payload = {}
 headers = {
 'Accept': '*/*',
@@ -77,3 +78,27 @@ def getATM(niftyCurrentPrice):
             niftyPrice = niftyPrice - mod 
 
     return niftyPrice
+
+def GetActiveContractsByVolume():
+    global urlActiveContracts, payload, headers
+    activeVolumeList = []
+    try:
+        response = requests.request("GET", urlActiveContracts, headers=headers, data = payload)
+        json = response.json()
+        activeVolumeList = json['volume']['data']
+    except:
+        print('GetActiveContractsByVolume() - Exception while sending request to NSE india.')
+    
+    return activeVolumeList
+
+def GetActiveContractsByValue():
+    global urlActiveContracts, payload, headers
+    activeValueList = []
+    try:
+        response = requests.request("GET", urlActiveContracts, headers=headers, data = payload)
+        json = response.json()
+        activeValueList = json['value']['data']
+    except:
+        print('GetActiveContractsByValue() - Exception while sending request to NSE india.')
+    
+    return activeValueList

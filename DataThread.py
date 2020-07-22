@@ -8,6 +8,16 @@ class Logger():
     def log(self, msg):
         print(msg)
 
+def IsThisMarketHr():   
+    now = datetime.datetime.now() 
+    today930 = now.replace(hour=9, minute=15, second=0, microsecond=0)
+    today330 = now.replace(hour=15, minute=30, second=0, microsecond=0)
+
+    if  now >= today930 and now <= today330:
+        return True    
+    else:
+        return False
+
 expiryDateList = []
 log = Logger()
 
@@ -15,16 +25,16 @@ class DataWriteThread(QtCore.QThread):
     def __init__(self):
         QtCore.QThread.__init__(self)
         self.timer = 60
-        self.time_x_axis     = []
-        self.data_to_plot_ce = {}
-        self.data_to_plot_pe = {}
-        self.todaydate       = str(h.getDate())
-        self.writeData       = True
+        self.time_x_axis        = []
+        self.data_to_plot_ce    = {}
+        self.data_to_plot_pe    = {}
+        self.todaydate          = str(h.getDate())
+        self.writeDuringMrktHrs = True
         self.createDB()
         self.DeleteOldData()
 
     def SetWriteDataState(self, state):
-        self.writeData = state
+        self.writeDuringMrktHrs = True
 
     def DeleteOldData(self):
         try:
@@ -95,7 +105,10 @@ class DataWriteThread(QtCore.QThread):
 
     def run(self):
         while True:
-            if True == self.writeData:
+            if True == self.writeDuringMrktHrs:
+                if IsThisMarketHr():
+                    self.ImportNseDataToDatabase()
+            else:
                 self.ImportNseDataToDatabase()
 
             t.sleep(self.timer)
@@ -243,10 +256,10 @@ class NiftyPriceThread(QtCore.QThread):
         self.table = "Nifty50"
         self.timer = 60
         self.createDB()
-        self.writeData  = True
+        self.writeDuringMrktHrs  = True
 
     def SetWriteDataState(self, state):
-        self.writeData  = state
+        self.writeDuringMrktHrs  = state
 
     def createDB(self):
         try:
@@ -284,7 +297,38 @@ class NiftyPriceThread(QtCore.QThread):
                 continue
             self.signal.emit(niftyPrice)
 
-            if True == self.writeData:
+            if True == self.writeDuringMrktHrs:
+                if IsThisMarketHr():
+                    self.InsertNiftyData(niftyPrice)
+            else:
                 self.InsertNiftyData(niftyPrice)
 
             t.sleep(self.timer)
+
+class ActiveContractsThread(QtCore.QThread):
+    activeContractsSgnl = QtCore.pyqtSignal('PyQt_PyObject')
+
+    def __init__(self):
+        QtCore.QThread.__init__(self)
+        self.timer = 60
+
+    def run(self):
+        while True:
+            activeContactsByVolume = h.GetActiveContractsByVolume()    
+            try:
+                allRecords = []
+                if [] != activeContactsByVolume:
+                    for record in activeContactsByVolume:
+                        if "NIFTY" == record['underlying']:
+                            row = [record['strikePrice'], record['optionType'], ("%.2f" % record['pChange']), record['openInterest'], record['lastPrice']]
+                            allRecords.append(row)
+                    self.activeContractsSgnl.emit(allRecords)
+                else:
+                    t.sleep(10)
+                    continue        
+            except:
+                t.sleep(10)
+                continue
+
+            t.sleep(self.timer)
+    

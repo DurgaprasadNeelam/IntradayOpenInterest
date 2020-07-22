@@ -232,7 +232,9 @@ class ApplicationWindow(QtCore.QObject):
         self.optionsWindow = QtGui.QWidget()
         self.optionsLayout = QtGui.QGridLayout()
 
-        self.optionsLayout.addWidget(QtGui.QLabel('Nifty'), 0,0,1,1)
+        self.niftyLbl = QtGui.QLabel('Nifty')
+        self.niftyLbl.setStyleSheet("color:blue;font-weight:bold;font-size:15px")
+        self.optionsLayout.addWidget(self.niftyLbl, 0,0,1,1)
         self.niftyPrice = QtGui.QLabel()
         self.niftyPrice.setStyleSheet("color: green;font-size:20px;margin-top:8px;margin-bottom:8px")
         self.optionsLayout.addWidget(self.niftyPrice, 0,1,1,1)
@@ -270,6 +272,14 @@ class ApplicationWindow(QtCore.QObject):
         self.marketHrs.setStyleSheet("margin-bottom:8px")
         self.marketHrs.setChecked(True)
         self.marketHrs.stateChanged.connect(self.ReadDuringMarketHrs)
+
+        self.activeCLable = QtGui.QLabel("Nifty Active Contracts")
+        self.optionsLayout.addWidget(self.activeCLable, 6,0,1,2)
+        self.activeCLable.setStyleSheet("margin-top:20px;color:blue;font-size:20px;font-weight:bold")
+
+        self.activeContactsWidget = QtGui.QTableWidget()
+        self.optionsLayout.addWidget(self.activeContactsWidget, 7,0,1,2)
+        #self.activeContactsWidget.setStyleSheet("margin-top:20px")
         
         verticalSpacer = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         self.optionsLayout.addItem(verticalSpacer)
@@ -280,16 +290,43 @@ class ApplicationWindow(QtCore.QObject):
 
         return self.mainWindow
 
+    def activeContactDataAvailable(self, tableData):
+        self.activeContactsWidget.clear()
+
+        hLabels = ["STRIKE", "TYPE", "%Chng", "OI", "LTP"]
+        rowCnt = len(tableData)
+        colCnt = len(hLabels)
+        self.activeContactsWidget.setRowCount(rowCnt)
+        self.activeContactsWidget.setColumnCount(colCnt)
+        self.activeContactsWidget.verticalHeader().setVisible(False)
+        self.activeContactsWidget.horizontalHeader().setVisible(True)
+        self.activeContactsWidget.horizontalHeader().setStyleSheet("font-weight:bold;border:1px")
+        self.activeContactsWidget.setHorizontalHeaderLabels(hLabels)
+        self.activeContactsWidget.setSortingEnabled(False)
+
+        for r in range(rowCnt):
+            for c in range(colCnt): 
+                self.activeContactsWidget.setItem(r,c, QtGui.QTableWidgetItem(str(tableData[r][c])))   
+        
+        self.activeContactsWidget.resizeColumnsToContents()
+        self.activeContactsWidget.setSortingEnabled(True)
+        self.activeContactsWidget.sortItems(1, QtCore.Qt.AscendingOrder)
+
 def main():
     app = QtGui.QApplication(sys.argv)
     appWin = ApplicationWindow()
     mainWindow = appWin.GetApplicationWindow()
     mainWindow.showMaximized()
+    mainWindow.setWindowTitle("Intraday Application")
 
     appWin.init_nifty_thread = dt.NiftyPriceThread()  
     appWin.init_nifty_thread.signal.connect(appWin.NiftyDataAvailable)
     appWin.writeDataStateSgnl.connect(appWin.init_nifty_thread.SetWriteDataState)
     appWin.init_nifty_thread.start()
+
+    activeContractsThread = dt.ActiveContractsThread()
+    activeContractsThread.start()
+    activeContractsThread.activeContractsSgnl.connect(appWin.activeContactDataAvailable)
 
     app.exec_()
 
