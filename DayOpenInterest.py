@@ -6,7 +6,6 @@ import DataThread as dt
 from DataThread import log
 from pyqtgraph.Qt import QtCore, QtGui
 
-
 class TimeAxisItem(pg.AxisItem):
     def tickStrings(self, values, scale, spacing):
         return [QtCore.QTime(0, 0, 0).addSecs(int(value)).toString("hh:mm:ss") for value in values]
@@ -21,6 +20,9 @@ class ApplicationWindow(QtCore.QObject):
 
     #write thread signals 
     writeDataStateSgnl = QtCore.pyqtSignal('PyQt_PyObject')
+
+    #nifty50 stocks signal
+    heaveyWeightsChdSgnl = QtCore.pyqtSignal('PyQt_PyObject')
 
     def __init__(self):
         QtCore.QObject.__init__(self)
@@ -48,6 +50,11 @@ class ApplicationWindow(QtCore.QObject):
         self.read_thread.start()
         self.expirySelction.currentIndexChanged.connect(self.ExpirySelectionChanged)
         self.AddEmptyGraphs2View()
+
+        self.nifty50_read_thread = dt.Nifty50DataReadThread(self.heavyWeightsList)  
+        self.heaveyWeightsChdSgnl.connect(self.nifty50_read_thread.SetStockeList)
+        self.nifty50_read_thread.nifty50StocksSgnl.connect(self.HeavyWeightsDataAvailable)
+        self.nifty50_read_thread.start()
 
     def DeleteExistingGraphs(self):
         self.graphsWidget.clear()
@@ -93,9 +100,19 @@ class ApplicationWindow(QtCore.QObject):
         plt = self.graphsWidget.addPlot(title='NIFTY', axisItems={'bottom': stringaxis})
         plt.showGrid(x=True,y=True)
         plt.addLegend()
-        item = plt.plot(name='Nifty')
-        item.setObjectName("Nifty")
+        item = plt.plot(name='NiftyHeavyWights Movement')
+        item.setObjectName("NiftyHeavy")
         self.graphs.append(item)
+        item1 = plt.plot(name='Nifty')
+        item1.setObjectName("Nifty")
+        self.graphs.append(item1)
+        
+        '''
+        item2 = pg.BarGraphItem(x=range(10), height=np.random.random(10), width=0.3, brush='r') 
+        item2.setObjectName("Volume")
+        plt.addItem(item2)
+        self.graphs.append(item2)
+        '''
 
         self.graphsWidget.nextRow()
         
@@ -224,6 +241,66 @@ class ApplicationWindow(QtCore.QObject):
             if plot.objectName() == "Nifty":
                 plot.setData(x = [self.TimeStamp(time) for time in time_x], y = price, pen='g')
 
+
+    def HeavyWeightsDataAvailable(self, niftyHeavyWightsData):        
+        if [] == self.graphs:
+            return
+
+        heavyWeightsTimePrice = {}
+        heavyWeightsTimeVol = {}
+
+        for record in niftyHeavyWightsData:
+            time = record[0]
+            ltp  = record[2]
+            vol  = record[3]
+
+            if time in heavyWeightsTimePrice:
+                heavyWeightsTimePrice[time] = heavyWeightsTimePrice[time] + ltp 
+                heavyWeightsTimeVol[time] = heavyWeightsTimeVol[time] + vol
+            else:
+                heavyWeightsTimePrice[time] = ltp  
+                heavyWeightsTimeVol[time] = vol    
+
+        #Heavy weights chart
+        price   = [] 
+        time_x  = []
+
+        for pr in heavyWeightsTimePrice.values():
+            price.append(pr)
+        for tm in heavyWeightsTimePrice.keys():
+            time_x.append(tm)
+
+        for plot in self.graphs:
+            if plot.objectName() == "NiftyHeavy":
+                plot.setData(x = [self.TimeStamp(time) for time in time_x], y = price, pen='b')
+
+        #Heavy weights volume chart
+        if len(time_x) < 2:
+            return
+
+        volume  = [] 
+        time_x.pop(0)
+
+        volPrv = None
+        for vl in heavyWeightsTimeVol.values():
+            if None != volPrv:
+                volume.append(vl-volPrv)
+            volPrv = vl
+        
+        for plot in self.graphs:
+            if plot.objectName() == "Volume":                
+                plot.setOpts(x = [self.TimeStamp(time) for time in time_x], height=volume, width=0.3, brush='r')
+
+    def heaveyWeightsChanged(self):
+        self.heavyWeightsList.clear()
+        heavyWightsWdg = self.grpBox.children()
+        for chld in heavyWightsWdg:
+            if str(type(QtGui.QCheckBox())) == str(type(chld)):
+                if chld.isChecked():
+                    self.heavyWeightsList.append(chld.text())
+        
+        self.heaveyWeightsChdSgnl.emit(self.heavyWeightsList)
+
     def GetApplicationWindow(self):
         self.mainWindow = QtGui.QWidget()
         self.mainLayout = QtGui.QGridLayout()
@@ -279,8 +356,28 @@ class ApplicationWindow(QtCore.QObject):
 
         self.activeContactsWidget = QtGui.QTableWidget()
         self.optionsLayout.addWidget(self.activeContactsWidget, 7,0,1,2)
-        #self.activeContactsWidget.setStyleSheet("margin-top:20px")
         
+        self.heavyWeightsLable = QtGui.QLabel("Nifty Heavy Weigts")
+        self.optionsLayout.addWidget(self.heavyWeightsLable, 8,0,1,2)
+        self.heavyWeightsLable.setStyleSheet("margin-top:20px;color:blue;font-size:20px;font-weight:bold")
+        self.grpBox = QtGui.QGroupBox()
+        self.optionsLayout.addWidget(self.grpBox, 9,0,1,2)
+        self.grpBxLayout = QtGui.QGridLayout()
+        self.grpBox.setLayout(self.grpBxLayout)
+
+        self.heavyWeightsList = ['RELIANCE', 'HDFCBANK', 'HDFC', 'ICICIBANK', 'INFY', 'TCS', 'HINDUNILVR', 'ITC']
+        r = 0
+        c = 0
+        for syb in self.heavyWeightsList:
+            self.stkWd = QtGui.QCheckBox(syb)
+            self.grpBxLayout.addWidget(self.stkWd, r, c, 1, 1)
+            self.stkWd.setChecked(True)
+            self.stkWd.stateChanged.connect(self.heaveyWeightsChanged)
+            c = c+1
+            if 2 == c:
+                c = 0
+                r = r+1
+
         verticalSpacer = QtGui.QSpacerItem(20, 40, QtGui.QSizePolicy.Minimum, QtGui.QSizePolicy.Expanding)
         self.optionsLayout.addItem(verticalSpacer)
 
@@ -327,6 +424,10 @@ def main():
     activeContractsThread = dt.ActiveContractsThread()
     activeContractsThread.start()
     activeContractsThread.activeContractsSgnl.connect(appWin.activeContactDataAvailable)
+
+    appWin.niftyDataReadThread = dt.Nifty50DataWriteThread(appWin.heavyWeightsList)
+    appWin.writeDataStateSgnl.connect(appWin.niftyDataReadThread.SetWriteDataState)
+    appWin.niftyDataReadThread.start()
 
     app.exec_()
 

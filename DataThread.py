@@ -322,6 +322,8 @@ class ActiveContractsThread(QtCore.QThread):
                         if "NIFTY" == record['underlying']:
                             row = [record['strikePrice'], record['optionType'], ("%.2f" % record['pChange']), record['openInterest'], record['lastPrice']]
                             allRecords.append(row)
+                    
+                    allRecords = allRecords[:5]
                     self.activeContractsSgnl.emit(allRecords)
                 else:
                     t.sleep(10)
@@ -332,3 +334,106 @@ class ActiveContractsThread(QtCore.QThread):
 
             t.sleep(self.timer)
     
+
+class Nifty50DataWriteThread(QtCore.QThread):
+    def __init__(self, stockList):
+        QtCore.QThread.__init__(self)
+        self.stockList = stockList
+        self.table = "NiftyHeavyWeights"
+        self.timer = 60
+        self.createDB()
+        self.writeDuringMrktHrs  = True
+
+    def SetWriteDataState(self, state):
+        self.writeDuringMrktHrs  = state
+
+    def createDB(self):
+        try:
+            self.conn = sqlite3.connect("OptionChain.db")
+            self.c = self.conn.cursor()
+            query = "create table if not exists " + self.table + " (id integer primary key AUTOINCREMENT, Date Date not null, Time Time not null, Symbol varchar(20), LTP real, TotVol integer, Open real, DayHigh real, DayLow real, pChange real)"
+            self.c.execute(query)
+            self.c.close()
+            log.log('Created/updated NiftyHeavyWeightsTable')
+        except:
+            log.log('Exception during Create NiftyHeavyWeights table')
+            log.log('Aborting process')
+            exit()
+
+    def WriteData(self):
+        nifty50Stocks = h.GetNifty50Data()
+        try:
+            if [] != nifty50Stocks:
+                time    = str(h.getTime())
+                date    = str(h.getDate())
+                for record in nifty50Stocks:
+                    if record['symbol'] in self.stockList:
+                        symbol  = record['symbol']
+                        ltp     = record['lastPrice']
+                        TotVol  = record['totalTradedVolume']
+                        dOpen   = record['open']
+                        dHigh   = record['dayHigh']
+                        dLow    = record['dayLow']
+                        pChg    = record['pChange']
+
+                        self.conn = sqlite3.connect("OptionChain.db")
+                        self.c = self.conn.cursor()
+                        self.c.execute("INSERT INTO " + self.table + " (Date, Time, Symbol, LTP, TotVol, Open, DayHigh, DayLow, pChange) VALUES (?,?,?,?,?,?,?,?,?)", (date, time, symbol, ltp, TotVol, dOpen, dHigh, dLow, pChg))
+                        self.conn.commit()
+                        self.c.close()
+                        self.conn.close()
+                return True
+        except:
+            a = 1
+        return False
+
+    def run(self):
+        while True:
+            if True == self.writeDuringMrktHrs:
+                if IsThisMarketHr():
+                    if False == self.WriteData():
+                        t.sleep(10)
+                        continue
+            else:
+                if False == self.WriteData():
+                    t.sleep(10)
+                    continue
+            t.sleep(self.timer)
+
+class Nifty50DataReadThread(QtCore.QThread):
+    nifty50StocksSgnl = QtCore.pyqtSignal('PyQt_PyObject')
+
+    def __init__(self, stockList):
+        QtCore.QThread.__init__(self)
+        self.timer = 61
+        self.todayDate = h.getDate()
+        self.stockList = stockList
+        self.table = "NiftyHeavyWeights"
+
+    def SetStockeList(self, stockList):
+        self.stockList = stockList
+        self.ReadData()
+
+    def ReadData(self):
+        if [] != self.stockList:
+            subQry = "("
+            for stk in self.stockList:
+                subQry = subQry + "'" + stk + "',"
+            subQry = subQry[:-1]
+            subQry = subQry + ")"
+
+            self.conn = sqlite3.connect("OptionChain.db")
+            self.c = self.conn.cursor()
+            query = "SELECT Time, Symbol, LTP, TotVol, pChange FROM " + self.table + " WHERE Date = '" + self.todayDate + "'"
+            query = query +  " and Symbol in " + subQry 
+
+            result = self.c.execute(query)
+            niftyRecords = result.fetchall()
+
+            if [] != niftyRecords:
+                self.nifty50StocksSgnl.emit(niftyRecords)
+
+    def run(self):
+        while True:
+            self.ReadData()
+            t.sleep(self.timer)

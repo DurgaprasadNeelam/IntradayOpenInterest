@@ -2,9 +2,11 @@ import time as t
 import requests
 import time as t 
 
-url = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
-urlMarketStatus = "https://www.nseindia.com/api/marketStatus"
-urlActiveContracts = "https://www.nseindia.com/api/snapshot-derivatives-equity?index=contracts&limit=10"
+url                 = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
+urlMarketStatus     = "https://www.nseindia.com/api/marketStatus"
+urlActiveContracts  = "https://www.nseindia.com/api/snapshot-derivatives-equity?index=contracts&limit=20"
+urlNifty50Stocks    = "https://www.nseindia.com/api/equity-stockIndices?index=NIFTY%2050"  
+
 payload = {}
 headers = {
 'Accept': '*/*',
@@ -102,3 +104,16 @@ def GetActiveContractsByValue():
         print('GetActiveContractsByValue() - Exception while sending request to NSE india.')
     
     return activeValueList
+
+
+def GetNifty50Data():
+    global urlNifty50Stocks, payload, headers
+    nifty50List = []
+    try:
+        response = requests.request("GET", urlNifty50Stocks, headers=headers, data = payload)
+        json = response.json()
+        nifty50List = json['data']
+    except:
+        print('GetNifty50Data() - Exception while sending request to NSE india.')
+    
+    return nifty50List
