@@ -132,26 +132,29 @@ class ApplicationWindow(QtCore.QObject):
             item2.setObjectName(str(strk)+'Nifty')
             self.graphs.append(item2)
 
+    def LiveNiftyPrice(self, livePrice):
+        self.niftyPrice.setText(str(livePrice))
+        
     def NiftyDataAvailable(self, niftyPrice):
-        self.read_thread = dt.DataReadThread(self.expiry)
-        self.read_thread.ceSignal.connect(self.CEOIDataAvailable)
-        self.read_thread.peSignal.connect(self.PEOIDataAvailable)
-        self.read_thread.niftySignal.connect(self.NiftyPriceAvailable)
-        self.expiryChngSgnl.connect(self.read_thread.SetExpiry)
-        self.timePeriodChngSgnl.connect(self.read_thread.SetTimePeriod)
-        self.otms2ShowSgnl.connect(self.read_thread.SetOtmsToShow)
-        self.updateOtms2ShowSgnl.connect(self.read_thread.UpdateOtmsToShow)
-        self.readDataSgnl.connect(self.read_thread.ReadData)
-
         self.niftyPrice.setText(str(niftyPrice))
         self.currentPrice = int(niftyPrice)
         self.CalAtmOtmRangeToRead()
 
         if self.init_data_thread is None:
+            self.read_thread = dt.DataReadThread(self.expiry)
+            self.read_thread.ceSignal.connect(self.CEOIDataAvailable)
+            self.read_thread.peSignal.connect(self.PEOIDataAvailable)
+            self.read_thread.niftySignal.connect(self.NiftyPriceAvailable)
+            self.expiryChngSgnl.connect(self.read_thread.SetExpiry)
+            self.timePeriodChngSgnl.connect(self.read_thread.SetTimePeriod)
+            self.otms2ShowSgnl.connect(self.read_thread.SetOtmsToShow)
+            self.updateOtms2ShowSgnl.connect(self.read_thread.UpdateOtmsToShow)
+            self.readDataSgnl.connect(self.read_thread.ReadData)
+
             self.init_data_thread = dt.InitDataThread()  
             self.init_data_thread.signal.connect(self.InitDataAvailble)
             self.init_data_thread.start()
-
+                        
     def ExpirySelectionChanged(self):
         self.expiry = self.expirySelction.currentText()
         if None != self.read_thread:
@@ -416,6 +419,10 @@ def main():
     mainWindow.showMaximized()
     mainWindow.setWindowTitle("Intraday Application")
 
+    appWin.nifty_price_thread = dt.NiftyLivePriceThread()  
+    appWin.nifty_price_thread.signal.connect(appWin.LiveNiftyPrice)
+    appWin.nifty_price_thread.start()
+
     appWin.init_nifty_thread = dt.NiftyPriceThread()  
     appWin.init_nifty_thread.signal.connect(appWin.NiftyDataAvailable)
     appWin.writeDataStateSgnl.connect(appWin.init_nifty_thread.SetWriteDataState)
@@ -425,9 +432,9 @@ def main():
     activeContractsThread.start()
     activeContractsThread.activeContractsSgnl.connect(appWin.activeContactDataAvailable)
 
-    appWin.niftyDataReadThread = dt.Nifty50DataWriteThread(appWin.heavyWeightsList)
-    appWin.writeDataStateSgnl.connect(appWin.niftyDataReadThread.SetWriteDataState)
-    appWin.niftyDataReadThread.start()
+    appWin.niftyDataWriteThread = dt.Nifty50DataWriteThread(appWin.heavyWeightsList)
+    appWin.writeDataStateSgnl.connect(appWin.niftyDataWriteThread.SetWriteDataState)
+    appWin.niftyDataWriteThread.start()
 
     app.exec_()
 

@@ -437,3 +437,20 @@ class Nifty50DataReadThread(QtCore.QThread):
         while True:
             self.ReadData()
             t.sleep(self.timer)
+
+class NiftyLivePriceThread(QtCore.QThread):
+    signal = QtCore.pyqtSignal('PyQt_PyObject')
+
+    def __init__(self):
+        QtCore.QThread.__init__(self)
+        self.timer = 5
+
+    def run(self):
+        while True:
+            niftyPrice = h.getNiftyCurrentPrice()
+            if niftyPrice != -1:
+                self.signal.emit(niftyPrice)
+            t.sleep(self.timer)
+                
+            
+
