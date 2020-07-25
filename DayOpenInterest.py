@@ -31,6 +31,7 @@ class ApplicationWindow(QtCore.QObject):
         self.otms2Read          = 2
         self.otmsToShow         = []
         self.graphs             = []
+        self.plotsDict          = {}
         self.init_data_thread   = None
         self.init_nifty_thread  = None
         self.write_thread       = None
@@ -51,14 +52,10 @@ class ApplicationWindow(QtCore.QObject):
         self.expirySelction.currentIndexChanged.connect(self.ExpirySelectionChanged)
         self.AddEmptyGraphs2View()
 
-        self.nifty50_read_thread = dt.Nifty50DataReadThread(self.heavyWeightsList)  
-        self.heaveyWeightsChdSgnl.connect(self.nifty50_read_thread.SetStockeList)
-        self.nifty50_read_thread.nifty50StocksSgnl.connect(self.HeavyWeightsDataAvailable)
-        self.nifty50_read_thread.start()
-
     def DeleteExistingGraphs(self):
         self.graphsWidget.clear()
         self.graphs.clear()
+        self.plotsDict.clear()
 
     def AddEmptyGraphs2View(self):
         self.otmsToShow.sort()
@@ -66,6 +63,7 @@ class ApplicationWindow(QtCore.QObject):
             strk = str(self.otmsToShow[i])
             stringaxis = TimeAxisItem(orientation='bottom')
             plt = self.graphsWidget.addPlot(title="STRIKE - "+str(strk), axisItems={'bottom': stringaxis})
+            plt.setObjectName("STRIKE - "+str(strk))
             plt.showGrid(x=True,y=True)
             plt.addLegend()
             item = plt.plot(name='CE')
@@ -74,9 +72,23 @@ class ApplicationWindow(QtCore.QObject):
             item1 = plt.plot(name='PE')
             item1.setObjectName(str(strk)+'PE')
             self.graphs.append(item1)
-            item2 = plt.plot(name='Nifty')
+
+            plt.setLabels(left='OI')
+            plt.showAxis('right')
+            p2 = pg.ViewBox()
+            plt.scene().addItem(p2)
+            plt.getAxis('right').linkToView(p2)
+            p2.setXLink(plt)
+            plt.getAxis('right').setLabel('Nifty', color='green')            
+            self.plotsDict[p2] = plt
+            p2.setGeometry(plt.vb.sceneBoundingRect())
+            p2.linkedViewChanged(plt.vb, p2.XAxis)
+
+            item2 =  pg.PlotCurveItem(name='Nifty')
             item2.setObjectName(str(strk)+'Nifty')
+            p2.addItem(item2)
             self.graphs.append(item2)
+            plt.vb.sigResized.connect(self.updateViews)
 
         self.graphsWidget.nextRow()    
 
@@ -84,6 +96,7 @@ class ApplicationWindow(QtCore.QObject):
         strk = self.otmsToShow[middle]
         stringaxis = TimeAxisItem(orientation='bottom')
         plt = self.graphsWidget.addPlot(title="STRIKE - "+str(strk), axisItems={'bottom': stringaxis})
+        plt.setObjectName("STRIKE - "+str(strk))
         plt.showGrid(x=True,y=True)
         plt.addLegend()
         item = plt.plot(name='CE')
@@ -92,21 +105,50 @@ class ApplicationWindow(QtCore.QObject):
         item1 = plt.plot(name='PE')
         item1.setObjectName(str(strk)+'PE')
         self.graphs.append(item1)
-        item2 = plt.plot(name='Nifty')
+        
+        plt.setLabels(left='OI')
+        plt.showAxis('right')
+        p2 = pg.ViewBox()
+        plt.scene().addItem(p2)
+        plt.getAxis('right').linkToView(p2)
+        p2.setXLink(plt)
+        plt.getAxis('right').setLabel('Nifty', color='green')
+        self.plotsDict[p2] = plt
+        p2.setGeometry(plt.vb.sceneBoundingRect())
+        p2.linkedViewChanged(plt.vb, p2.XAxis)
+
+        item2 = pg.PlotCurveItem(name='Nifty')
         item2.setObjectName(str(strk)+'Nifty')
+        p2.addItem(item2)
         self.graphs.append(item2)
+        plt.vb.sigResized.connect(self.updateViews)
 
         stringaxis = TimeAxisItem(orientation='bottom')
         plt = self.graphsWidget.addPlot(title='NIFTY', axisItems={'bottom': stringaxis})
+        plt.setObjectName("STRIKE - "+str(strk))
         plt.showGrid(x=True,y=True)
         plt.addLegend()
-        item = plt.plot(name='NiftyHeavyWights Movement')
-        item.setObjectName("NiftyHeavy")
-        self.graphs.append(item)
         item1 = plt.plot(name='Nifty')
         item1.setObjectName("Nifty")
         self.graphs.append(item1)
         
+        plt.setLabels(left='Nifty')
+        plt.showAxis('right')
+        p2 = pg.ViewBox()
+        plt.scene().addItem(p2)
+        plt.getAxis('right').linkToView(p2)
+        p2.setXLink(plt)
+        plt.getAxis('right').setLabel('Nifty-Heavy Weights', color='green')
+        self.plotsDict[p2] = plt
+        p2.setGeometry(plt.vb.sceneBoundingRect())
+        p2.linkedViewChanged(plt.vb, p2.XAxis)
+
+        item =  pg.PlotCurveItem(name='NiftyHeavyWights Movement')
+        item.setObjectName("NiftyHeavy")
+        p2.addItem(item)
+        self.graphs.append(item)
+        plt.vb.sigResized.connect(self.updateViews)
+
         '''
         item2 = pg.BarGraphItem(x=range(10), height=np.random.random(10), width=0.3, brush='r') 
         item2.setObjectName("Volume")
@@ -120,6 +162,7 @@ class ApplicationWindow(QtCore.QObject):
             strk = str(self.otmsToShow[middle+1+i])
             stringaxis = TimeAxisItem(orientation='bottom')
             plt = self.graphsWidget.addPlot(title="STRIKE - "+str(strk), axisItems={'bottom': stringaxis})
+            plt.setObjectName("STRIKE - "+str(strk))
             plt.showGrid(x=True,y=True)
             plt.addLegend()
             item = plt.plot(name='CE')
@@ -128,28 +171,55 @@ class ApplicationWindow(QtCore.QObject):
             item1 = plt.plot(name='PE')
             item1.setObjectName(str(strk)+'PE')
             self.graphs.append(item1)
-            item2 = plt.plot(name='Nifty')
+
+            plt.setLabels(left='OI')
+            plt.showAxis('right')
+            p2 = pg.ViewBox()
+            plt.scene().addItem(p2)
+            plt.getAxis('right').linkToView(p2)
+            p2.setXLink(plt)
+            plt.getAxis('right').setLabel('Nifty', color='green')
+            self.plotsDict[p2] = plt
+            p2.setGeometry(plt.vb.sceneBoundingRect())
+            p2.linkedViewChanged(plt.vb, p2.XAxis)
+            
+            item2 =  pg.PlotCurveItem(name='Nifty')
             item2.setObjectName(str(strk)+'Nifty')
+            p2.addItem(item2)
             self.graphs.append(item2)
+            plt.vb.sigResized.connect(self.updateViews)
+
+        self.updateViews()
+
+    def updateViews(self):
+        for key in self.plotsDict.keys():
+            p2 = key
+            p1 = self.plotsDict[key]
+            p2.setGeometry(p1.vb.sceneBoundingRect()) 
+            p2.linkedViewChanged(p1.vb, p2.XAxis)
 
     def LiveNiftyPrice(self, livePrice):
         self.niftyPrice.setText(str(livePrice))
         
     def NiftyDataAvailable(self, niftyPrice):
-        self.niftyPrice.setText(str(niftyPrice))
         self.currentPrice = int(niftyPrice)
         self.CalAtmOtmRangeToRead()
 
         if self.init_data_thread is None:
-            self.read_thread = dt.DataReadThread(self.expiry)
+            self.read_thread = dt.DataReadThread(self.expiry, self.heavyWeightsList)
             self.read_thread.ceSignal.connect(self.CEOIDataAvailable)
             self.read_thread.peSignal.connect(self.PEOIDataAvailable)
             self.read_thread.niftySignal.connect(self.NiftyPriceAvailable)
+            self.read_thread.niftyHeavyWeightsSgnl.connect(self.HeavyWeightsDataAvailable)
+
+            self.read_thread.UpdateOtmsToShow(self.otmsToShow)
+            
             self.expiryChngSgnl.connect(self.read_thread.SetExpiry)
             self.timePeriodChngSgnl.connect(self.read_thread.SetTimePeriod)
             self.otms2ShowSgnl.connect(self.read_thread.SetOtmsToShow)
             self.updateOtms2ShowSgnl.connect(self.read_thread.UpdateOtmsToShow)
             self.readDataSgnl.connect(self.read_thread.ReadData)
+            self.heaveyWeightsChdSgnl.connect(self.read_thread.UpdateHeavyWeightsList)
 
             self.init_data_thread = dt.InitDataThread()  
             self.init_data_thread.signal.connect(self.InitDataAvailble)
@@ -214,9 +284,9 @@ class ApplicationWindow(QtCore.QObject):
                 plot.setData(x = [self.TimeStamp(time) for time in time_x], y = ce_oi_y, pen='r')
             elif plot.objectName() == str(strike)+"Nifty":
                 if True == self.ShowNiftyOnOI:
-                    plot.setData(x = [self.TimeStamp(time) for time in time_x], y = niftyPrc, pen='y')
+                    plot.setData(x = [self.TimeStamp(time) for time in time_x], y = niftyPrc, pen='g')
                 else: 
-                     plot.setData(x = [], y = [], pen='r')
+                     plot.setData(x = [], y = [])
                      
             ######## check plot.hide()
 
@@ -231,7 +301,7 @@ class ApplicationWindow(QtCore.QObject):
 
         for plot in self.graphs:
             if plot.objectName() == str(strike)+"PE":
-                plot.setData(x = [self.TimeStamp(time) for time in time_x], y = pe_oi_y, pen='g')
+                plot.setData(x = [self.TimeStamp(time) for time in time_x], y = pe_oi_y, pen='b')
 
     def NiftyPriceAvailable(self, niftyData):
         price   = niftyData['Price']
@@ -243,7 +313,6 @@ class ApplicationWindow(QtCore.QObject):
         for plot in self.graphs:
             if plot.objectName() == "Nifty":
                 plot.setData(x = [self.TimeStamp(time) for time in time_x], y = price, pen='g')
-
 
     def HeavyWeightsDataAvailable(self, niftyHeavyWightsData):        
         if [] == self.graphs:
@@ -275,7 +344,7 @@ class ApplicationWindow(QtCore.QObject):
 
         for plot in self.graphs:
             if plot.objectName() == "NiftyHeavy":
-                plot.setData(x = [self.TimeStamp(time) for time in time_x], y = price, pen='b')
+                plot.setData(x = [self.TimeStamp(time) for time in time_x], y = price, pen='y')
 
         #Heavy weights volume chart
         if len(time_x) < 2:
@@ -419,22 +488,22 @@ def main():
     mainWindow.showMaximized()
     mainWindow.setWindowTitle("Intraday Application")
 
-    appWin.nifty_price_thread = dt.NiftyLivePriceThread()  
-    appWin.nifty_price_thread.signal.connect(appWin.LiveNiftyPrice)
-    appWin.nifty_price_thread.start()
+    appWin.nifty_live_price_thread = dt.NiftyLivePriceThread()  
+    appWin.nifty_live_price_thread.signal.connect(appWin.LiveNiftyPrice)
+    appWin.nifty_live_price_thread.start()
 
     appWin.init_nifty_thread = dt.NiftyPriceThread()  
     appWin.init_nifty_thread.signal.connect(appWin.NiftyDataAvailable)
     appWin.writeDataStateSgnl.connect(appWin.init_nifty_thread.SetWriteDataState)
     appWin.init_nifty_thread.start()
 
-    activeContractsThread = dt.ActiveContractsThread()
-    activeContractsThread.start()
-    activeContractsThread.activeContractsSgnl.connect(appWin.activeContactDataAvailable)
+    active_contracts_thread = dt.ActiveContractsThread()
+    active_contracts_thread.start()
+    active_contracts_thread.activeContractsSgnl.connect(appWin.activeContactDataAvailable)
 
-    appWin.niftyDataWriteThread = dt.Nifty50DataWriteThread(appWin.heavyWeightsList)
-    appWin.writeDataStateSgnl.connect(appWin.niftyDataWriteThread.SetWriteDataState)
-    appWin.niftyDataWriteThread.start()
+    appWin.nifty_data_write_thread = dt.NiftyHeavyWeightsWriteThread(appWin.heavyWeightsList)
+    appWin.writeDataStateSgnl.connect(appWin.nifty_data_write_thread.SetWriteDataState)
+    appWin.nifty_data_write_thread.start()
 
     app.exec_()
 

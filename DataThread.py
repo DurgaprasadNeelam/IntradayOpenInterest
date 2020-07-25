@@ -25,9 +25,6 @@ class DataWriteThread(QtCore.QThread):
     def __init__(self):
         QtCore.QThread.__init__(self)
         self.timer = 60
-        self.time_x_axis        = []
-        self.data_to_plot_ce    = {}
-        self.data_to_plot_pe    = {}
         self.todaydate          = str(h.getDate())
         self.writeDuringMrktHrs = True
         self.createDB()
@@ -41,7 +38,8 @@ class DataWriteThread(QtCore.QThread):
             self.conn = sqlite3.connect("OptionChain.db")
             self.c = self.conn.cursor()
             self.c.execute("DELETE from OptionChain WHERE Date != '"+ self.todaydate + "'")
-            self.c.execute("DELETE from Nifty50 WHERE Date != '"+ self.todaydate + "'")            
+            self.c.execute("DELETE from NiftyHeavyWeights WHERE Date != '"+ self.todaydate + "'")            
+            self.c.execute("DELETE from Nifty50 WHERE Date != '"+ self.todaydate + "'")
             self.conn.commit()
             self.c.close()
             self.conn.close()
@@ -56,7 +54,6 @@ class DataWriteThread(QtCore.QThread):
             query = "create table if not exists OptionChain(id integer primary key AUTOINCREMENT, Date Date not null, Time Time not null, Strike int not null, Expiry varchar(20) not null, ContractType varchar(2), OpenInterest integer,ChangeInOI integer, pChangeInOI real, TotVol integer, IV real, LTP real, TotBuyQty integer, TotSellQty integer, Underlying real)"
             self.c.execute(query)
             self.c.close()
-            log.log('Db created/updated successfully')
         except:
             log.log('Exception during CreateDB()')
             log.log('Aborting process')
@@ -118,14 +115,16 @@ class DataReadThread(QtCore.QThread):
     peSignal    = QtCore.pyqtSignal(dict)
     ceSignal    = QtCore.pyqtSignal(dict)
     niftySignal = QtCore.pyqtSignal(dict)
+    niftyHeavyWeightsSgnl = QtCore.pyqtSignal('PyQt_PyObject')
 
-    def __init__(self, expiry):
+    def __init__(self, expiry, heavyWeightsList):
         QtCore.QThread.__init__(self)
         self.currentExpiry = expiry
         self.timePeriod    = 1
         self.todayDate = h.getDate()
         self.optionaTable = "OptionChain.db"
         self.NiftyTable = "Nifty50"
+        self.heavyWeightsList = heavyWeightsList
         self.otmsToShow = []
         self.timer = 60
 
@@ -142,6 +141,10 @@ class DataReadThread(QtCore.QThread):
 
     def SetTimePeriod(self, timePeriod):
         self.timePeriod = timePeriod      
+        self.ReadData()
+
+    def UpdateHeavyWeightsList(self, heavyList):
+        self.heavyWeightsList = heavyList
         self.ReadData()
 
     def ReadData(self):
@@ -217,6 +220,22 @@ class DataReadThread(QtCore.QThread):
         nifty_data['Price'] = price       
         self.niftySignal.emit(nifty_data)
 
+        if [] != self.heavyWeightsList:
+            subQry = "("
+            for stk in self.heavyWeightsList:
+                subQry = subQry + "'" + stk + "',"
+            subQry = subQry[:-1]
+            subQry = subQry + ")"
+
+            query = "SELECT Time, Symbol, LTP, TotVol, pChange FROM NiftyHeavyWeights WHERE Date = '" + self.todayDate + "'"
+            query = query +  " and Symbol in " + subQry 
+
+            result = self.c.execute(query)
+            niftyRecords = result.fetchall()
+
+            if [] != niftyRecords:
+                self.niftyHeavyWeightsSgnl.emit(niftyRecords)
+
         self.c.close()
         self.conn.close()
 
@@ -268,7 +287,6 @@ class NiftyPriceThread(QtCore.QThread):
             query = "create table if not exists " + self.table + " (id integer primary key AUTOINCREMENT, Date Date not null, Time Time not null, Nifty50 real)"
             self.c.execute(query)
             self.c.close()
-            log.log('Nifty table created/updated successfully')
         except:
             log.log('Exception during Create Nifty50 table')
             log.log('Aborting process')
@@ -335,12 +353,12 @@ class ActiveContractsThread(QtCore.QThread):
             t.sleep(self.timer)
     
 
-class Nifty50DataWriteThread(QtCore.QThread):
+class NiftyHeavyWeightsWriteThread(QtCore.QThread):
     def __init__(self, stockList):
         QtCore.QThread.__init__(self)
         self.stockList = stockList
         self.table = "NiftyHeavyWeights"
-        self.timer = 60
+        self.timer = 61
         self.createDB()
         self.writeDuringMrktHrs  = True
 
@@ -354,7 +372,6 @@ class Nifty50DataWriteThread(QtCore.QThread):
             query = "create table if not exists " + self.table + " (id integer primary key AUTOINCREMENT, Date Date not null, Time Time not null, Symbol varchar(20), LTP real, TotVol integer, Open real, DayHigh real, DayLow real, pChange real)"
             self.c.execute(query)
             self.c.close()
-            log.log('Created/updated NiftyHeavyWeightsTable')
         except:
             log.log('Exception during Create NiftyHeavyWeights table')
             log.log('Aborting process')
@@ -400,50 +417,12 @@ class Nifty50DataWriteThread(QtCore.QThread):
                     continue
             t.sleep(self.timer)
 
-class Nifty50DataReadThread(QtCore.QThread):
-    nifty50StocksSgnl = QtCore.pyqtSignal('PyQt_PyObject')
-
-    def __init__(self, stockList):
-        QtCore.QThread.__init__(self)
-        self.timer = 61
-        self.todayDate = h.getDate()
-        self.stockList = stockList
-        self.table = "NiftyHeavyWeights"
-
-    def SetStockeList(self, stockList):
-        self.stockList = stockList
-        self.ReadData()
-
-    def ReadData(self):
-        if [] != self.stockList:
-            subQry = "("
-            for stk in self.stockList:
-                subQry = subQry + "'" + stk + "',"
-            subQry = subQry[:-1]
-            subQry = subQry + ")"
-
-            self.conn = sqlite3.connect("OptionChain.db")
-            self.c = self.conn.cursor()
-            query = "SELECT Time, Symbol, LTP, TotVol, pChange FROM " + self.table + " WHERE Date = '" + self.todayDate + "'"
-            query = query +  " and Symbol in " + subQry 
-
-            result = self.c.execute(query)
-            niftyRecords = result.fetchall()
-
-            if [] != niftyRecords:
-                self.nifty50StocksSgnl.emit(niftyRecords)
-
-    def run(self):
-        while True:
-            self.ReadData()
-            t.sleep(self.timer)
-
 class NiftyLivePriceThread(QtCore.QThread):
     signal = QtCore.pyqtSignal('PyQt_PyObject')
 
     def __init__(self):
         QtCore.QThread.__init__(self)
-        self.timer = 5
+        self.timer = 2
 
     def run(self):
         while True:
