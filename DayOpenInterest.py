@@ -5,6 +5,7 @@ import Help as h
 import DataThread as dt
 from DataThread import log
 from pyqtgraph.Qt import QtCore, QtGui
+import numpy as np 
 
 class TimeAxisItem(pg.AxisItem):
     def tickStrings(self, values, scale, spacing):
@@ -39,6 +40,7 @@ class ApplicationWindow(QtCore.QObject):
         self.ShowNiftyOnOI      = True
 
     def InitDataAvailble(self, expiryList):
+        log.log("InitDataAvailble, expiry list = " + str(expiryList))
         self.expiry = expiryList[0]
         self.expirySelction.addItems(expiryList) 
         
@@ -53,6 +55,10 @@ class ApplicationWindow(QtCore.QObject):
         self.AddEmptyGraphs2View()
 
     def DeleteExistingGraphs(self):
+        
+        for vw in self.plotsDict.keys():
+            vw.clear()
+        
         self.graphsWidget.clear()
         self.graphs.clear()
         self.plotsDict.clear()
@@ -138,7 +144,7 @@ class ApplicationWindow(QtCore.QObject):
         plt.scene().addItem(p2)
         plt.getAxis('right').linkToView(p2)
         p2.setXLink(plt)
-        plt.getAxis('right').setLabel('Nifty-Heavy Weights', color='green')
+        plt.getAxis('right').setLabel('Nifty - Heavy Weights', color='yellow')
         self.plotsDict[p2] = plt
         p2.setGeometry(plt.vb.sceneBoundingRect())
         p2.linkedViewChanged(plt.vb, p2.XAxis)
@@ -147,13 +153,22 @@ class ApplicationWindow(QtCore.QObject):
         item.setObjectName("NiftyHeavy")
         p2.addItem(item)
         self.graphs.append(item)
-        plt.vb.sigResized.connect(self.updateViews)
-
+        
         '''
-        item2 = pg.BarGraphItem(x=range(10), height=np.random.random(10), width=0.3, brush='r') 
+        #item2 = pg.BarGraphItem(x=range(10), height=np.random.random(10), width=0.3, brush='r') 
+        p3 = pg.ViewBox()
+        ax3 = pg.AxisItem('right')
+        plt.layout.addItem(ax3, 2,3)
+        plt.scene().addItem(p3)
+        ax3.linkToView(p3)
+        p3.setXLink(plt)
+        #ax3.setZValue(-1)
+        ax3.setLabel('Volume', color='red')
+        item2 = pg.BarGraphItem(x=range(2), height=np.random.random(2), width=0.3, name='Volume', brush='r')
         item2.setObjectName("Volume")
-        plt.addItem(item2)
+        p3.addItem(item2)
         self.graphs.append(item2)
+        plt.vb.sigResized.connect(self.updateViews)
         '''
 
         self.graphsWidget.nextRow()
@@ -206,6 +221,7 @@ class ApplicationWindow(QtCore.QObject):
         self.CalAtmOtmRangeToRead()
 
         if self.init_data_thread is None:
+            log.log("NiftyDataAvailable, initializing all threads")
             self.read_thread = dt.DataReadThread(self.expiry, self.heavyWeightsList)
             self.read_thread.ceSignal.connect(self.CEOIDataAvailable)
             self.read_thread.peSignal.connect(self.PEOIDataAvailable)
@@ -227,21 +243,25 @@ class ApplicationWindow(QtCore.QObject):
                         
     def ExpirySelectionChanged(self):
         self.expiry = self.expirySelction.currentText()
+        log.log("ExpirySelectionChanged : " + self.expiry)
         if None != self.read_thread:
             self.expiryChngSgnl.emit(self.expiry)
         
     def TimePeriodChanged(self):
         period = self.timePeriod.currentText()
+        log.log("TimePeriodChanged : " + period)
         if None != self.read_thread:
             self.timePeriodChngSgnl.emit(int(period))
 
-    def ReadDuringMarketHrs(self):
+    def ReadDuringMarketHrs(self):        
         state = self.marketHrs.isChecked()
+        log.log("readDuringMarketHrs : " + str(state))
         if None != self.write_thread and None != self.init_nifty_thread:
             self.writeDataStateSgnl.emit(state)
 
     def ShowNiftyChartOnOIChart(self):
         self.ShowNiftyOnOI = self.niftyChrtChkBx.isChecked()
+        log.log("ShowNiftyChartOnOIChart : " + str(self.ShowNiftyOnOI))
         if None != self.read_thread:
             self.readDataSgnl.emit()
 
@@ -250,6 +270,7 @@ class ApplicationWindow(QtCore.QObject):
         self.CalAtmOtmRangeToRead()
         self.DeleteExistingGraphs()
         self.AddEmptyGraphs2View()
+        log.log("OtmstoShowChanged : " + str(self.otms2Read))
 
         if None != self.read_thread:
             self.otms2ShowSgnl.emit(self.otmsToShow)
@@ -271,97 +292,118 @@ class ApplicationWindow(QtCore.QObject):
         return tt   
 
     def CEOIDataAvailable(self, ceData):
-        strike   = ceData['Strike']
-        time_x   = ceData['Time']
-        ce_oi_y  = ceData['OI']
-        niftyPrc = ceData['Nifty']
+        try:
+            strike   = ceData['Strike']
+            time_x   = ceData['Time']
+            ce_oi_y  = ceData['OI']
+            niftyPrc = ceData['Nifty']
 
-        if [] == strike or [] == time_x or [] == ce_oi_y or [] == niftyPrc:
-            return
+            if [] == strike or [] == time_x or [] == ce_oi_y or [] == niftyPrc:
+                return
 
-        for plot in self.graphs:
-            if plot.objectName() == str(strike):
-                plot.setData(x = [self.TimeStamp(time) for time in time_x], y = ce_oi_y, pen='r')
-            elif plot.objectName() == str(strike)+"Nifty":
-                if True == self.ShowNiftyOnOI:
-                    plot.setData(x = [self.TimeStamp(time) for time in time_x], y = niftyPrc, pen='g')
-                else: 
-                     plot.setData(x = [], y = [])
+            for plot in self.graphs:
+                if plot.objectName() == str(strike):
+                    plot.setData(x = [self.TimeStamp(time) for time in time_x], y = ce_oi_y, pen='r')
+                elif plot.objectName() == str(strike)+"Nifty":
+                    if True == self.ShowNiftyOnOI:
+                        pen = pg.mkPen(color=(0, 255, 0), width=1, style=QtCore.Qt.DotLine)
+                        plot.setData(x = [self.TimeStamp(time) for time in time_x], y = niftyPrc, pen=pen)
+                    else: 
+                        plot.setData(x = [], y = [])
                      
             ######## check plot.hide()
-
+        except:
+            log.log("Exception in CEOIDataAvailable")
 
     def PEOIDataAvailable(self, peData):
-        strike  = peData['Strike']
-        time_x  = peData['Time']
-        pe_oi_y = peData['OI']
+        try:
+            strike  = peData['Strike']
+            time_x  = peData['Time']
+            pe_oi_y = peData['OI']
 
-        if [] == strike or [] == time_x or [] == pe_oi_y:
-            return
+            if [] == strike or [] == time_x or [] == pe_oi_y:
+                return
 
-        for plot in self.graphs:
-            if plot.objectName() == str(strike)+"PE":
-                plot.setData(x = [self.TimeStamp(time) for time in time_x], y = pe_oi_y, pen='b')
+            for plot in self.graphs:
+                if plot.objectName() == str(strike)+"PE":
+                    plot.setData(x = [self.TimeStamp(time) for time in time_x], y = pe_oi_y, pen='b')
+        except:
+            log.log("Exception in PEOIDataAvailable")
 
     def NiftyPriceAvailable(self, niftyData):
-        price   = niftyData['Price']
-        time_x  = niftyData['Time']
+        try:
+            price   = niftyData['Price']
+            time_x  = niftyData['Time']
 
-        if [] == price or [] == time_x:
-            return
+            if [] == price or [] == time_x:
+                return
 
-        for plot in self.graphs:
-            if plot.objectName() == "Nifty":
-                plot.setData(x = [self.TimeStamp(time) for time in time_x], y = price, pen='g')
+            for plot in self.graphs:
+                if plot.objectName() == "Nifty":
+                    pen = pg.mkPen(color=(0, 255, 0), width=1, style=QtCore.Qt.DotLine)
+                    plot.setData(x = [self.TimeStamp(time) for time in time_x], y = price, pen=pen)
+        except:
+            log.log("Exception in NiftyPriceAvailable")
 
     def HeavyWeightsDataAvailable(self, niftyHeavyWightsData):        
         if [] == self.graphs:
             return
 
-        heavyWeightsTimePrice = {}
-        heavyWeightsTimeVol = {}
+        try:
+            heavyWeightsTimePrice = {}
+            heavyWeightsTimeVol = {}
 
-        for record in niftyHeavyWightsData:
-            time = record[0]
-            ltp  = record[2]
-            vol  = record[3]
+            for record in niftyHeavyWightsData:
+                time = record[0]
+                ltp  = record[2]
+                vol  = record[3]
 
-            if time in heavyWeightsTimePrice:
-                heavyWeightsTimePrice[time] = heavyWeightsTimePrice[time] + ltp 
-                heavyWeightsTimeVol[time] = heavyWeightsTimeVol[time] + vol
-            else:
-                heavyWeightsTimePrice[time] = ltp  
-                heavyWeightsTimeVol[time] = vol    
+                if time in heavyWeightsTimePrice:
+                    heavyWeightsTimePrice[time] = heavyWeightsTimePrice[time] + ltp 
+                    heavyWeightsTimeVol[time] = heavyWeightsTimeVol[time] + vol
+                else:
+                    heavyWeightsTimePrice[time] = ltp  
+                    heavyWeightsTimeVol[time] = vol    
 
-        #Heavy weights chart
-        price   = [] 
-        time_x  = []
+            #Heavy weights chart
+            price   = [] 
+            time_x  = []
 
-        for pr in heavyWeightsTimePrice.values():
-            price.append(pr)
-        for tm in heavyWeightsTimePrice.keys():
-            time_x.append(tm)
+            for pr in heavyWeightsTimePrice.values():
+                price.append(pr)
+            for tm in heavyWeightsTimePrice.keys():
+                time_x.append(tm)
 
-        for plot in self.graphs:
-            if plot.objectName() == "NiftyHeavy":
-                plot.setData(x = [self.TimeStamp(time) for time in time_x], y = price, pen='y')
+            for plot in self.graphs:
+                if plot.objectName() == "NiftyHeavy":
+                    plot.setData(x = [self.TimeStamp(time) for time in time_x], y = price, pen='y')
 
-        #Heavy weights volume chart
-        if len(time_x) < 2:
-            return
+            #Heavy weights volume chart
+            if len(time_x) < 2:
+                return
 
-        volume  = [] 
-        time_x.pop(0)
+            volume  = [] 
+            time_x.pop(0)
 
-        volPrv = None
-        for vl in heavyWeightsTimeVol.values():
-            if None != volPrv:
-                volume.append(vl-volPrv)
-            volPrv = vl
-        
-        for plot in self.graphs:
-            if plot.objectName() == "Volume":                
-                plot.setOpts(x = [self.TimeStamp(time) for time in time_x], height=volume, width=0.3, brush='r')
+            volPrv = None
+            for vl in heavyWeightsTimeVol.values():
+                if None != volPrv:
+                    volume.append(vl-volPrv)
+                volPrv = vl
+            
+            '''
+            volume = np.random.random(len(time_x))
+
+            print(time_x)
+            print(volume)
+            #print(heavyWeightsTimeVol.values())
+            '''
+
+            for plot in self.graphs:
+                if plot.objectName() == "Volume":                
+                    plot.setOpts(x = [self.TimeStamp(time) for time in time_x], height=volume, width=0.3, brush='r')
+        except:
+            log.log("Exception in HeavyWeightsDataAvailable")
 
     def heaveyWeightsChanged(self):
         self.heavyWeightsList.clear()
@@ -372,6 +414,7 @@ class ApplicationWindow(QtCore.QObject):
                     self.heavyWeightsList.append(chld.text())
         
         self.heaveyWeightsChdSgnl.emit(self.heavyWeightsList)
+        log.log("Heavy weights changed : " + str(self.heavyWeightsList))
 
     def GetApplicationWindow(self):
         self.mainWindow = QtGui.QWidget()
@@ -460,28 +503,37 @@ class ApplicationWindow(QtCore.QObject):
         return self.mainWindow
 
     def activeContactDataAvailable(self, tableData):
+        log.log("activeContactDataAvailable")
         self.activeContactsWidget.clear()
 
-        hLabels = ["STRIKE", "TYPE", "%Chng", "OI", "LTP"]
-        rowCnt = len(tableData)
-        colCnt = len(hLabels)
-        self.activeContactsWidget.setRowCount(rowCnt)
-        self.activeContactsWidget.setColumnCount(colCnt)
-        self.activeContactsWidget.verticalHeader().setVisible(False)
-        self.activeContactsWidget.horizontalHeader().setVisible(True)
-        self.activeContactsWidget.horizontalHeader().setStyleSheet("font-weight:bold;border:1px")
-        self.activeContactsWidget.setHorizontalHeaderLabels(hLabels)
-        self.activeContactsWidget.setSortingEnabled(False)
+        try:
+            hLabels = ["STRIKE", "TYPE", "%Chng", "OI", "LTP"]
+            rowCnt = len(tableData)
+            colCnt = len(hLabels)
+            self.activeContactsWidget.setRowCount(rowCnt)
+            self.activeContactsWidget.setColumnCount(colCnt)
+            self.activeContactsWidget.verticalHeader().setVisible(False)
+            self.activeContactsWidget.horizontalHeader().setVisible(True)
+            self.activeContactsWidget.horizontalHeader().setStyleSheet("font-weight:bold;border:1px")
+            self.activeContactsWidget.setHorizontalHeaderLabels(hLabels)
+            self.activeContactsWidget.setSortingEnabled(False)
 
-        for r in range(rowCnt):
-            for c in range(colCnt): 
-                self.activeContactsWidget.setItem(r,c, QtGui.QTableWidgetItem(str(tableData[r][c])))   
-        
-        self.activeContactsWidget.resizeColumnsToContents()
-        self.activeContactsWidget.setSortingEnabled(True)
-        self.activeContactsWidget.sortItems(1, QtCore.Qt.AscendingOrder)
+            for r in range(rowCnt):
+                for c in range(colCnt): 
+                    self.activeContactsWidget.setItem(r,c, QtGui.QTableWidgetItem(str(tableData[r][c])))   
+            
+            self.activeContactsWidget.resizeColumnsToContents()
+            self.activeContactsWidget.setSortingEnabled(True)
+            self.activeContactsWidget.sortItems(1, QtCore.Qt.AscendingOrder)
+        except:
+            log.log("Exception in activeContactDataAvailable")
 
 def main():
+    log.logHeader("------------------------------------------------------------------------------------------")
+    log.logHeader("           " + h.getDate() + " " + h.getTime() +"  Day Open Interest")
+    log.logHeader("------------------------------------------------------------------------------------------")
+    log.changeBaseConfig()
+    
     app = QtGui.QApplication(sys.argv)
     appWin = ApplicationWindow()
     mainWindow = appWin.GetApplicationWindow()

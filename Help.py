@@ -1,7 +1,8 @@
 import time as t 
 import requests
 import time as t 
-
+import logging 
+  
 url                 = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
 urlMarketStatus     = "https://www.nseindia.com/api/marketStatus"
 urlActiveContracts  = "https://www.nseindia.com/api/snapshot-derivatives-equity?index=contracts&limit=20"
@@ -12,6 +13,28 @@ headers = {
 'Accept': '*/*',
 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.163 Safari/537.36',
 'Accept-Encoding': 'gzip, deflate, br'}
+
+class Logger():
+    def __init__(self):
+        now = t.localtime(t.time())
+        self.logName = "IntraDayLog_" + (t.strftime("%H_%M_%S", now))+ ".log"
+        logging.basicConfig(filename=self.logName, format='%(message)s', filemode='w') 
+        self.mylogger=logging.getLogger() 
+        self.mylogger.setLevel(logging.INFO)
+
+    def log(self, msg):
+        self.mylogger.info(msg)
+
+    def logHeader(self, msg):
+        self.mylogger.info(msg)
+
+    def changeBaseConfig(self):
+        for handler in self.mylogger.root.handlers[:]:
+            self.mylogger.root.removeHandler(handler)
+
+        logging.basicConfig(filename=self.logName, format='%(asctime)s %(message)s', filemode='a')
+
+log = Logger()
 
 def getTime(param="%H:%M"):
     now = t.localtime(t.time())
@@ -29,17 +52,17 @@ def GetExpiryList():
         response = requests.request("GET", url, headers=headers, data = payload)
         json = response.json()
         expiryList = json['records']['expiryDates']
+    
+        #consider only 5 records
+        if len(expiryList) > 5:
+            for i in range(5):
+                expiryData.append(expiryList[i])
+        else:
+            expiryData = expiryList    
     except:
         #print('GetExpiryList() - Exception while sending request to NSE india for Expiry List')
         expiryList = []
         
-    #consider only 5 records
-    if len(expiryList) > 5:
-        for i in range(5):
-            expiryData.append(expiryList[i])
-    else:
-        expiryData = expiryList
-
     return expiryData
 
 def GetOIDataList():
@@ -50,7 +73,7 @@ def GetOIDataList():
         json = response.json()
         expiryList = json['records']['data']
     except:
-        print('GetOIDataList() - Exception while sending request to NSE india for Option chain data.')
+        pass
     
     return expiryList
 
@@ -65,7 +88,7 @@ def getNiftyCurrentPrice():
             if market['index'] == 'NIFTY 50':
                 niftyPrice = market['last']
     except:
-        print('getNiftyCurrentPrice() - Exception while sending request to Nifty for Nifty price.')
+        pass
       
     return niftyPrice
 
@@ -89,7 +112,7 @@ def GetActiveContractsByVolume():
         json = response.json()
         activeVolumeList = json['volume']['data']
     except:
-        print('GetActiveContractsByVolume() - Exception while sending request to NSE india.')
+        pass
     
     return activeVolumeList
 
@@ -101,7 +124,7 @@ def GetActiveContractsByValue():
         json = response.json()
         activeValueList = json['value']['data']
     except:
-        print('GetActiveContractsByValue() - Exception while sending request to NSE india.')
+        pass
     
     return activeValueList
 
@@ -114,6 +137,6 @@ def GetNifty50Data():
         json = response.json()
         nifty50List = json['data']
     except:
-        print('GetNifty50Data() - Exception while sending request to NSE india.')
+        pass
     
     return nifty50List

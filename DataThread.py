@@ -4,9 +4,9 @@ import Help as h
 import time as t
 import sqlite3
 
-class Logger():
-    def log(self, msg):
-        print(msg)
+from Help import log
+
+expiryDateList = []
 
 def IsThisMarketHr():   
     now = datetime.datetime.now() 
@@ -18,20 +18,21 @@ def IsThisMarketHr():
     else:
         return False
 
-expiryDateList = []
-log = Logger()
-
 class DataWriteThread(QtCore.QThread):
     def __init__(self):
         QtCore.QThread.__init__(self)
         self.timer = 60
-        self.todaydate          = str(h.getDate())
+        self.todaydate = str(h.getDate())
         self.writeDuringMrktHrs = True
         self.createDB()
         self.DeleteOldData()
+    
+    def __del__(self): 
+        log.log("DataWriteThread - exited") 
 
     def SetWriteDataState(self, state):
-        self.writeDuringMrktHrs = True
+        self.writeDuringMrktHrs = state
+        log.log("DataWriteThread - setWriteDataState : " + str(state) )
 
     def DeleteOldData(self):
         try:
@@ -55,7 +56,7 @@ class DataWriteThread(QtCore.QThread):
             self.c.execute(query)
             self.c.close()
         except:
-            log.log('Exception during CreateDB()')
+            log.log('DataWriteThread - Exception during CreateDB()')
             log.log('Aborting process')
             exit()
                     
@@ -82,8 +83,7 @@ class DataWriteThread(QtCore.QThread):
             self.c.close()
             self.conn.close()
         except:
-            a = 1
-        #    log.log('Exception while inserting CE/PE data')
+            log.log('DataWriteThread - Exception while inserting CE/PE data')
 
     def ImportNseDataToDatabase(self):
         try:
@@ -98,7 +98,7 @@ class DataWriteThread(QtCore.QThread):
                     self.InsertData(data, 'CE')
                     self.InsertData(data, 'PE')        
         except:
-            log.log('Exception while reading nse data or adding record to database')
+            log.log('DataWriteThread - Exception while reading nse data or adding record to database')
 
     def run(self):
         while True:
@@ -128,7 +128,11 @@ class DataReadThread(QtCore.QThread):
         self.otmsToShow = []
         self.timer = 60
 
+    def __del__(self): 
+        log.log("DataReadThread - exited") 
+
     def SetOtmsToShow(self, otms):
+        log.log("DataReadThread - SetOtmsToShow = " + str(otms))
         self.otmsToShow = otms.copy()
         self.ReadData()
 
@@ -136,105 +140,110 @@ class DataReadThread(QtCore.QThread):
         self.otmsToShow = otms.copy()
 
     def SetExpiry(self, expiry):
+        log.log("DataReadThread - SetExpiry = " + expiry)
         self.currentExpiry = expiry
         self.ReadData()
 
     def SetTimePeriod(self, timePeriod):
+        log.log("DataReadThread - SetTimePeriod = " + str(timePeriod))
         self.timePeriod = timePeriod      
         self.ReadData()
 
     def UpdateHeavyWeightsList(self, heavyList):
+        log.log("DataReadThread - UpdateHeavyWeightsList = " + str(heavyList))
         self.heavyWeightsList = heavyList
         self.ReadData()
 
     def ReadData(self):
         self.conn = sqlite3.connect("OptionChain.db")
         self.c = self.conn.cursor()
-        '''
-        log.log("current expry for query = " + self.currentExpiry)
-        log.log("Time period = " + str(self.timePeriod))
-        log.log("OTMs2Show = " + str(self.otmsToShow))
-        '''
         tPeriod = self.timePeriod
-        nifty_data = {}    
-        for strike in self.otmsToShow:        
-            ce_data = {}
-            pe_data = {}    
-            query = "SELECT Time, OpenInterest, Underlying FROM OptionChain WHERE Expiry = '" + self.currentExpiry + "' AND "
-            query = query + " ContractType = 'CE' AND "  + " Strike = " + str(strike) + " AND Date = '" + self.todayDate + "'" 
-            result = self.c.execute(query)
-            ceRecords = result.fetchall()
 
-            niftyPrc = []
-            timeLst  = []
-            OI       = []
-            i        = 0
-            sz       = len(ceRecords)
-            
-            for record in ceRecords:
-                if 1 == tPeriod or 0 == i or i == sz-1 or 0 == (i % tPeriod):
-                    timeLst.append(record[0])
-                    OI.append(record[1]) 
-                    niftyPrc.append(record[2])
+        try:
+            for strike in self.otmsToShow:        
+                ce_data = {}
+                pe_data = {}    
+                query = "SELECT Time, OpenInterest, Underlying FROM OptionChain WHERE Expiry = '" + self.currentExpiry + "' AND "
+                query = query + " ContractType = 'CE' AND "  + " Strike = " + str(strike) + " AND Date = '" + self.todayDate + "'" 
+                result = self.c.execute(query)
+                ceRecords = result.fetchall()
 
-            ce_data['Strike'] = strike
-            ce_data['Time'] = timeLst
-            ce_data['OI'] = OI
-            ce_data['Nifty'] = niftyPrc       
-            self.ceSignal.emit(ce_data)
+                niftyPrc = []
+                timeLst  = []
+                OI       = []
+                i        = 0
+                sz       = len(ceRecords)
+                
+                for record in ceRecords:
+                    if 1 == tPeriod or 0 == i or i == sz-1 or 0 == (i % tPeriod):
+                        timeLst.append(record[0])
+                        OI.append(record[1]) 
+                        niftyPrc.append(record[2])
 
-            query = "SELECT Time, OpenInterest FROM OptionChain WHERE Expiry = '" + self.currentExpiry + "' AND "
-            query = query + " ContractType = 'PE' AND "  + " Strike = " + str(strike) + " AND Date = '" + self.todayDate + "'"
-            result = self.c.execute(query)
-            peRecords = result.fetchall()
+                ce_data['Strike'] = strike
+                ce_data['Time'] = timeLst
+                ce_data['OI'] = OI
+                ce_data['Nifty'] = niftyPrc       
+                self.ceSignal.emit(ce_data)
 
-            timeLst = []
-            OI   = []
-            i  = 0
-            sz = len(peRecords)
-            for record in peRecords:
-                if 1 == tPeriod or 0 == i or i == sz-1 or 0 == (i % tPeriod):
-                    timeLst.append(record[0])
-                    OI.append(record[1]) 
-                i = i+1
+                query = "SELECT Time, OpenInterest FROM OptionChain WHERE Expiry = '" + self.currentExpiry + "' AND "
+                query = query + " ContractType = 'PE' AND "  + " Strike = " + str(strike) + " AND Date = '" + self.todayDate + "'"
+                result = self.c.execute(query)
+                peRecords = result.fetchall()
 
-            pe_data['Strike'] = strike
-            pe_data['Time'] = timeLst
-            pe_data['OI'] = OI       
-            self.peSignal.emit(pe_data)
+                timeLst = []
+                OI   = []
+                i  = 0
+                sz = len(peRecords)
+                for record in peRecords:
+                    if 1 == tPeriod or 0 == i or i == sz-1 or 0 == (i % tPeriod):
+                        timeLst.append(record[0])
+                        OI.append(record[1]) 
+                    i = i+1
 
-        query = "SELECT Time, Nifty50 FROM " + self.NiftyTable + " WHERE Date = '" + self.todayDate + "'" 
-        result = self.c.execute(query)
-        niftyRecords = result.fetchall()
+                pe_data['Strike'] = strike
+                pe_data['Time'] = timeLst
+                pe_data['OI'] = OI       
+                self.peSignal.emit(pe_data)
 
-        timeLst = []
-        price   = []
-        i  = 0
-        sz = len(niftyRecords)
-        for record in niftyRecords:
-            if 1 == tPeriod or 0 == i or i == sz-1 or 0 == (i % tPeriod):
-                timeLst.append(record[0])
-                price.append(record[1]) 
-
-        nifty_data['Time'] = timeLst
-        nifty_data['Price'] = price       
-        self.niftySignal.emit(nifty_data)
-
-        if [] != self.heavyWeightsList:
-            subQry = "("
-            for stk in self.heavyWeightsList:
-                subQry = subQry + "'" + stk + "',"
-            subQry = subQry[:-1]
-            subQry = subQry + ")"
-
-            query = "SELECT Time, Symbol, LTP, TotVol, pChange FROM NiftyHeavyWeights WHERE Date = '" + self.todayDate + "'"
-            query = query +  " and Symbol in " + subQry 
-
+            query = "SELECT Time, Nifty50 FROM " + self.NiftyTable + " WHERE Date = '" + self.todayDate + "'" 
             result = self.c.execute(query)
             niftyRecords = result.fetchall()
 
-            if [] != niftyRecords:
-                self.niftyHeavyWeightsSgnl.emit(niftyRecords)
+            timeLst = []
+            price   = []
+            i  = 0
+            sz = len(niftyRecords)
+            for record in niftyRecords:
+                if 1 == tPeriod or 0 == i or i == sz-1 or 0 == (i % tPeriod):
+                    timeLst.append(record[0])
+                    price.append(record[1]) 
+
+            nifty_data = {}    
+            nifty_data['Time'] = timeLst
+            nifty_data['Price'] = price       
+            self.niftySignal.emit(nifty_data)
+
+            if [] != self.heavyWeightsList:
+                subQry = "("
+                for stk in self.heavyWeightsList:
+                    subQry = subQry + "'" + stk + "',"
+                subQry = subQry[:-1]
+                subQry = subQry + ")"
+
+                query = "SELECT Time, Symbol, LTP, TotVol, pChange FROM NiftyHeavyWeights WHERE Date = '" + self.todayDate + "'"
+                query = query +  " and Symbol in " + subQry 
+
+                result = self.c.execute(query)
+                niftyRecords = result.fetchall()
+
+                if [] != niftyRecords:
+                    self.niftyHeavyWeightsSgnl.emit(niftyRecords)
+            else:
+                self.niftyHeavyWeightsSgnl.emit([])
+
+        except:
+            log.log("DataReadThread - exception during read data")
 
         self.c.close()
         self.conn.close()
@@ -242,7 +251,7 @@ class DataReadThread(QtCore.QThread):
     def run(self):
         while True:
             if [] == self.otmsToShow:
-                log.log('OTMS to show is empty in read thread, retry')
+                log.log('DataReadThread - OTMS to show is empty, retry')
                 t.sleep(5)
                 continue
 
@@ -255,12 +264,15 @@ class InitDataThread(QtCore.QThread):
     def __init__(self):
         QtCore.QThread.__init__(self)
 
+    def __del__(self): 
+        log.log("InitDataThread - exited") 
+
     def run(self):
         global expiryDateList
         expiryList = h.GetExpiryList()        
         #loop untill we get valid data
         while expiryList == []:
-            log.log('Exception while getting expiry list, retry again')
+            log.log('InitDataThread - Exception while getting expiry list, retry again')
             expiryList = h.GetExpiryList()
             t.sleep(5)
 
@@ -277,8 +289,12 @@ class NiftyPriceThread(QtCore.QThread):
         self.createDB()
         self.writeDuringMrktHrs  = True
 
+    def __del__(self): 
+        log.log("NiftyPriceThread - exited") 
+
     def SetWriteDataState(self, state):
         self.writeDuringMrktHrs  = state
+        log.log("NiftyPriceThread - setWriteDataState : " + str(state))
 
     def createDB(self):
         try:
@@ -304,13 +320,13 @@ class NiftyPriceThread(QtCore.QThread):
             self.c.close()
             self.conn.close()
         except:
-            a = 1
+            log.log("NiftyPriceThread - exception during InsertNiftyData")
 
     def run(self):
         while True:
             niftyPrice = h.getNiftyCurrentPrice()
             if niftyPrice == -1:
-                log.log('Exception while getting nifty price, retry')
+                log.log('NiftyPriceThread - Exception while getting nifty price, retry')
                 t.sleep(5)
                 continue
             self.signal.emit(niftyPrice)
@@ -330,6 +346,9 @@ class ActiveContractsThread(QtCore.QThread):
         QtCore.QThread.__init__(self)
         self.timer = 60
 
+    def __del__(self): 
+        log.log("ActiveContractsThread - exited") 
+
     def run(self):
         while True:
             activeContactsByVolume = h.GetActiveContractsByVolume()    
@@ -344,9 +363,11 @@ class ActiveContractsThread(QtCore.QThread):
                     allRecords = allRecords[:5]
                     self.activeContractsSgnl.emit(allRecords)
                 else:
+                    log.log("ActiveContractsThread - active contacts by volume empty")
                     t.sleep(10)
                     continue        
             except:
+                log.log("ActiveContractsThread - Exception while getting active contacts")
                 t.sleep(10)
                 continue
 
@@ -362,8 +383,12 @@ class NiftyHeavyWeightsWriteThread(QtCore.QThread):
         self.createDB()
         self.writeDuringMrktHrs  = True
 
+    def __del__(self): 
+        log.log("NiftyHeavyWeightsWriteThread - exited") 
+
     def SetWriteDataState(self, state):
         self.writeDuringMrktHrs  = state
+        log.log("NiftyHeavyWeightsWriteThread - SetWriteDataState : " + str(state))
 
     def createDB(self):
         try:
@@ -401,7 +426,8 @@ class NiftyHeavyWeightsWriteThread(QtCore.QThread):
                         self.conn.close()
                 return True
         except:
-            a = 1
+            log.log("NiftyHeavyWeightsWriteThread - exception during write data")
+
         return False
 
     def run(self):
@@ -423,6 +449,9 @@ class NiftyLivePriceThread(QtCore.QThread):
     def __init__(self):
         QtCore.QThread.__init__(self)
         self.timer = 2
+
+    def __del__(self): 
+        log.log("NiftyLivePriceThread - exited") 
 
     def run(self):
         while True:
