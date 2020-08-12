@@ -1,8 +1,10 @@
 import time as t 
+import datetime
 import requests
 import time as t 
 import logging 
-  
+import os, glob
+
 url                 = "https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY"
 urlMarketStatus     = "https://www.nseindia.com/api/marketStatus"
 urlActiveContracts  = "https://www.nseindia.com/api/snapshot-derivatives-equity?index=contracts&limit=20"
@@ -16,6 +18,10 @@ headers = {
 
 class Logger():
     def __init__(self):
+        #delete old logs
+        for fl in glob.glob('*.log'):
+            os.remove(fl)
+
         now = t.localtime(t.time())
         self.logName = "IntraDayLog_" + (t.strftime("%H_%M_%S", now))+ ".log"
         logging.basicConfig(filename=self.logName, format='%(message)s', filemode='w') 
@@ -24,6 +30,9 @@ class Logger():
 
     def log(self, msg):
         self.mylogger.info(msg)
+
+    def logException(self, msg):
+        self.mylogger.exception(msg)
 
     def logHeader(self, msg):
         self.mylogger.info(msg)
@@ -35,6 +44,16 @@ class Logger():
         logging.basicConfig(filename=self.logName, format='%(asctime)s %(message)s', filemode='a')
 
 log = Logger()
+
+def IsThisMarketHr():   
+    now = datetime.datetime.now() 
+    today930 = now.replace(hour=9, minute=15, second=0, microsecond=0)
+    today330 = now.replace(hour=15, minute=30, second=0, microsecond=0)
+
+    if  now >= today930 and now <= today330:
+        return True    
+    else:
+        return False
 
 def getTime(param="%H:%M"):
     now = t.localtime(t.time())
