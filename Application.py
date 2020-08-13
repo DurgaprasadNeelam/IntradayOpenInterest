@@ -100,7 +100,12 @@ class ApplicationWindow(QtCore.QObject):
         ax3.linkToView(p3)
         p3.setXLink(plt)
         ax3.setZValue(-100000)
-        ax3.setLabel('Volume', color='green')
+        
+
+        if uniqueID.find('CE') != -1 or uniqueID.find('PE') != -1:
+            ax3.setLabel('Volume', color='blue')
+        else:
+            ax3.setLabel('Volume', color='yellow')
 
         item2 = None
         if uniqueID.find('CE') != -1:
@@ -459,6 +464,12 @@ class ApplicationWindow(QtCore.QObject):
             for plot in self.graphs:
                 if plot.objectName() == uniqueID:
                     plot.setOpts(x = [self.TimeStamp(time) for time in time_x], height=volume_y, width=0.5)
+
+                    if uniqueID.find('CE') != -1:
+                        plot.setZValue(5)
+                    else:
+                        plot.setZValue(4)
+
         except:
             log.logException("Exception while plotting volume cart for : " + uniqueID)
 
