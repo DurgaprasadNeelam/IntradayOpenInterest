@@ -1,4 +1,5 @@
 from pyqtgraph.Qt import QtCore, QtGui
+from pyqtgraph import Qt
 import pyqtgraph as pg
 import ActiveContractsReader as ACT
 import ExpiryListReader as ELRT
@@ -6,6 +7,10 @@ import NiftyHeavyWeightsWriter as NHWWT
 import NiftyLivePriceReader as NLPRT
 import NiftyPriceWriter as NPWT
 import OIDataReaderWriter as ODRWT
+import OpenInterestChangeItem as OICItem  
+import OIChangeReadThread as OICRT
+import pandas as pd
+import numpy as np 
 
 import sys
 import time as t
@@ -61,6 +66,62 @@ class ApplicationWindow(QtCore.QObject):
             self.read_thread.start()
             self.expirySelction.currentIndexChanged.connect(self.ExpirySelectionChanged)
             self.AddEmptyGraphs2View()
+
+            #Draw header item
+            self.item = OICItem.OpenInterestChangeItem("Strike")
+            self.gScene.addItem(self.item)
+            self.item.setPos(0, 0)
+
+            #draw overall OI change items (15 above ATM & 15 below ATM)
+            strikeList = []
+            oiToShow = 20
+            atm = h.getATM(self.currentPrice)            
+            atm = atm - (oiToShow/2)*50
+            index  = 1
+            oiHeight = 30
+            for i in range(0, oiToShow):
+                strike = atm 
+                strike = strike + i*50 
+                istrike= int(strike)
+                
+                x = 0
+                y = (oiHeight*index)
+                index = index+1
+                
+                self.item = OICItem.OpenInterestChangeItem(str(istrike))
+                self.gScene.addItem(self.item)
+                self.item.setPos(x, y)
+                strikeList.append(istrike)
+
+            self.oiChgReaderThread = OICRT.OIChangeReaderThread(self.expiry, strikeList)
+            self.oiChgReaderThread.olChgSignal.connect(self.OIChangeDataAvailable)
+            self.oiChgReaderThread.start()
+
+    def OIChangeDataAvailable(self, oiData):
+        try:
+            if oiData.empty == True:
+                log.log('OIChangeDataAvailable - empty dataframe')
+                return
+
+            maxOI = max(oiData['OI'])
+
+            for item in self.gScene.items():
+                if(item.strike == "Strike"):
+                    continue
+
+                ceData = oiData.loc[item.strike + "-CE"]
+                peData = oiData.loc[item.strike + "-PE"]                
+                item.setValues(maxOI, ceData['OI'], peData['OI'], ceData['PChange'], peData['PChange'], ceData['LTP'], peData['LTP'])
+            
+            self.gScene.update()        
+
+            '''
+            smin = self.gView.verticalScrollBar().minimum()
+            smax = self.gView.verticalScrollBar().maximum()
+            self.gView.verticalScrollBar().setValue((smax-smin)/2)
+            '''
+        except:
+            log.logException("Exception in OIChangeDataAvailable")
 
     #Delete existing all graphs & references
     def DeleteExistingGraphs(self):        
@@ -267,7 +328,7 @@ class ApplicationWindow(QtCore.QObject):
             for i in range(3):
                 self.temp_data_thread[i].signal.connect(self.InitDataAvailble)
                 self.temp_data_thread[i].start()
-                        
+
     #when expiry selection changed from ui, re-draw everything                    
     def ExpirySelectionChanged(self):
         self.expiry = self.expirySelction.currentText()
@@ -540,13 +601,20 @@ class ApplicationWindow(QtCore.QObject):
         self.activeCLable.setStyleSheet("margin-top:20px;color:blue;font-size:20px;font-weight:bold")
 
         self.activeContactsWidget = QtGui.QTableWidget()
+        self.activeContactsWidget.setFixedHeight(200)
         self.optionsLayout.addWidget(self.activeContactsWidget, 7,0,1,2)
-        
+
+        self.gView  = QtGui.QGraphicsView()
+        self.gScene = QtGui.QGraphicsScene()
+        self.gScene.setSceneRect(0, 0, 330, 600)
+        self.gView.setScene(self.gScene)
+        self.optionsLayout.addWidget(self.gView, 8, 0,1,2)
+
         self.heavyWeightsLable = QtGui.QLabel("Nifty Heavy Weigts")
-        self.optionsLayout.addWidget(self.heavyWeightsLable, 8,0,1,2)
+        self.optionsLayout.addWidget(self.heavyWeightsLable, 9,0,1,2)
         self.heavyWeightsLable.setStyleSheet("margin-top:20px;color:blue;font-size:20px;font-weight:bold")
         self.grpBox = QtGui.QGroupBox()
-        self.optionsLayout.addWidget(self.grpBox, 9,0,1,2)
+        self.optionsLayout.addWidget(self.grpBox, 10,0,1,2)
         self.grpBxLayout = QtGui.QGridLayout()
         self.grpBox.setLayout(self.grpBxLayout)
 
@@ -560,7 +628,7 @@ class ApplicationWindow(QtCore.QObject):
             self.stkWd.setChecked(True)
             self.stkWd.stateChanged.connect(self.heaveyWeightsChanged)
             c = c+1
-            if 2 == c:
+            if 4 == c:
                 c = 0
                 r = r+1
 
@@ -569,9 +637,10 @@ class ApplicationWindow(QtCore.QObject):
         self.optionsLayout.addItem(verticalSpacer)
 
         #Graphics widget to plot all graphs
+        self.optionsWindow.setFixedWidth(380)
         self.graphsWidget = pg.GraphicsLayoutWidget()
         self.mainLayout.addWidget(self.optionsWindow , 0, 0, 1, 1)
-        self.mainLayout.addWidget(self.graphsWidget, 0, 1, 1, 1)
+        self.mainLayout.addWidget(self.graphsWidget, 0, 1, 2, 1)
 
         return self.mainWindow
 
@@ -597,6 +666,7 @@ class ApplicationWindow(QtCore.QObject):
             
             self.activeContactsWidget.resizeColumnsToContents()
             self.activeContactsWidget.setSortingEnabled(True)
+            self.activeContactsWidget.horizontalHeader().setStretchLastSection(True)
             self.activeContactsWidget.sortItems(1, QtCore.Qt.AscendingOrder)
         except:
             log.logException("Exception in activeContactDataAvailable")
